@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import math
 import pygame as pg
 
 
@@ -75,16 +76,33 @@ def get_kk_imgs() -> dict[tuple[int, int], pg.Surface]:
     kk_base = pg.image.load("fig/3.png")
     kk_imgs = {
         (0, 0): pg.transform.rotozoom(kk_base, 0, 0.9),
-        (+5, 0): pg.transform.rotozoom(kk_base, 0, 0.9),      # 右
-        (-5, 0): pg.transform.rotozoom(kk_base, 180, 0.9),    # 左
-        (0, -5): pg.transform.rotozoom(kk_base, 90, 0.9),     # 上
-        (0, +5): pg.transform.rotozoom(kk_base, -90, 0.9),    # 下
-        (+5, -5): pg.transform.rotozoom(kk_base, -45, 0.9),   # 右上
-        (+5, +5): pg.transform.rotozoom(kk_base, -135, 0.9),  # 右下
-        (-5, -5): pg.transform.rotozoom(kk_base, 45, 0.9),    # 左上
-        (-5, +5): pg.transform.rotozoom(kk_base, 135, 0.9),   # 左下
+        (+5, 0): pg.transform.rotozoom(kk_base, 0, 0.9),
+        (-5, 0): pg.transform.rotozoom(kk_base, 180, 0.9),
+        (0, -5): pg.transform.rotozoom(kk_base, 90, 0.9),
+        (0, +5): pg.transform.rotozoom(kk_base, -90, 0.9),
+        (+5, -5): pg.transform.rotozoom(kk_base, -45, 0.9),
+        (+5, +5): pg.transform.rotozoom(kk_base, -135, 0.9),
+        (-5, -5): pg.transform.rotozoom(kk_base, 45, 0.9),
+        (-5, +5): pg.transform.rotozoom(kk_base, 135, 0.9),
     }
     return kk_imgs
+
+
+def calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float]) -> tuple[float, float]:
+    """
+    爆弾をこうかとんに向かわせるための方向ベクトルを計算する関数
+    引数: org 爆弾Rect, dst こうかとんRect, current_xy 現在の速度ベクトル
+    戻り値: (vx, vy) 新しい速度ベクトル
+    """
+    dx = dst.centerx - org.centerx
+    dy = dst.centery - org.centery
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return current_xy
+    if dist < 300:  # 距離が近すぎる場合は慣性で移動
+        return current_xy
+    scale = math.sqrt(50) / dist
+    return dx * scale, dy * scale
 
 
 def main():
@@ -100,8 +118,8 @@ def main():
     bb_rct = bb_imgs[0].get_rect()
     bb_rct.centerx = random.randint(0, WIDTH)
     bb_rct.centery = random.randint(0, HEIGHT)
-    vx, vy = +5, +5
 
+    vx, vy = +5, +5
     clock = pg.time.Clock()
     tmr = 0
     while True:
@@ -114,6 +132,7 @@ def main():
             gameover(screen)
             return
 
+        # こうかとん移動
         key_lst = pg.key.get_pressed()
         sum_mv = [0, 0]
         for key, mv in DELTA.items():
@@ -124,20 +143,16 @@ def main():
         if check_bound(kk_rct) != (True, True):
             kk_rct.move_ip(-sum_mv[0], -sum_mv[1])
 
-        # こうかとんの向きを移動方向に合わせる
         kk_img = kk_imgs.get(tuple(sum_mv), kk_imgs[(0, 0)])
         screen.blit(kk_img, kk_rct)
 
-        # 爆弾処理（時間で拡大・加速）
+        # 追従型爆弾
         idx = min(tmr // 500, 9)
         bb_img = bb_imgs[idx]
+        vx, vy = calc_orientation(bb_rct, kk_rct, (vx, vy))
         avx, avy = vx * bb_accs[idx], vy * bb_accs[idx]
+
         bb_rct.move_ip(avx, avy)
-        yoko, tate = check_bound(bb_rct)
-        if not yoko:
-            vx *= -1
-        if not tate:
-            vy *= -1
         screen.blit(bb_img, bb_rct)
 
         pg.display.update()
