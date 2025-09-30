@@ -134,7 +134,7 @@ def main():
                 return
         screen.blit(bg_img, [0, 0])
 
-        # こうかとん vs 複数爆弾
+        # 衝突判定：こうかとん vs 複数爆弾
         for bomb in bombs:
             if kk_rct.colliderect(bomb["rct"]):
                 gameover(screen)
