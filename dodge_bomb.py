@@ -1,109 +1,175 @@
-import os, random, sys, math
+import os
+import random
+import sys
+import math
 import pygame as pg
 
+
 WIDTH, HEIGHT = 1100, 650
-DELTA = {pg.K_UP:(0,-5), pg.K_DOWN:(0,5), pg.K_LEFT:(-5,0), pg.K_RIGHT:(5,0)}
+DELTA = {
+    pg.K_UP: (0, -5),
+    pg.K_DOWN: (0, +5),
+    pg.K_LEFT: (-5, 0),
+    pg.K_RIGHT: (+5, 0),
+}
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-def check_bound(rct):
+
+def check_bound(rct: pg.Rect) -> tuple[bool, bool]:
+    """
+    引数：こうかとんRect or ばくだんRect
+    戻り値：判定結果タプル（横方向，縦方向）
+    画面内ならTrue／画面外ならFalse
+    """
     yoko, tate = True, True
-    if rct.left < 0 or WIDTH < rct.right: yoko = False
-    if rct.top < 0 or HEIGHT < rct.bottom: tate = False
+    if rct.left < 0 or WIDTH < rct.right:
+        yoko = False
+    if rct.top < 0 or HEIGHT < rct.bottom:
+        tate = False
     return yoko, tate
 
-def init_bb_imgs():
+
+def gameover(screen: pg.Surface) -> None:
+    """
+    ゲームオーバー画面を表示する関数
+    引数: screen Surface
+    戻り値: None
+    """
+    go_sfc = pg.Surface((WIDTH, HEIGHT))
+    go_sfc.fill((0, 0, 0))
+    go_sfc.set_alpha(200)
+
+    font = pg.font.Font(None, 100)
+    txt = font.render("Game Over", True, (255, 255, 255))
+    txt_rct = txt.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+
+    kk_img = pg.image.load("fig/8.png")  # 泣いているこうかとん
+    kk_rct = kk_img.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100))
+
+    screen.blit(go_sfc, (0, 0))
+    screen.blit(txt, txt_rct)
+    screen.blit(kk_img, kk_rct)
+    pg.display.update()
+    pg.time.wait(5000)
+
+
+def init_bb_imgs() -> tuple[list[pg.Surface], list[int]]:
+    """
+    爆弾のサイズリストと加速度リストを生成する関数
+    戻り値: (爆弾Surfaceリスト, 加速度リスト)
+    """
     bb_imgs = []
     for r in range(1, 11):
-        bb = pg.Surface((20*r, 20*r))
-        pg.draw.circle(bb, (255,0,0), (10*r,10*r), 10*r)
-        bb.set_colorkey((0,0,0))
-        bb_imgs.append(bb)
-    bb_accs = [a for a in range(1,11)]
+        bb_img = pg.Surface((20*r, 20*r))
+        pg.draw.circle(bb_img, (255, 0, 0), (10*r, 10*r), 10*r)
+        bb_img.set_colorkey((0, 0, 0))
+        bb_imgs.append(bb_img)
+    bb_accs = [a for a in range(1, 11)]
     return bb_imgs, bb_accs
 
-def get_kk_imgs():
-    base = pg.image.load("fig/3.png")
-    return {
-        (0,0): pg.transform.rotozoom(base,0,0.9),
-        (+5,0): pg.transform.rotozoom(base,0,0.9),
-        (-5,0): pg.transform.rotozoom(base,180,0.9),
-        (0,-5): pg.transform.rotozoom(base,90,0.9),
-        (0,+5): pg.transform.rotozoom(base,-90,0.9),
-        (+5,-5): pg.transform.rotozoom(base,-45,0.9),
-        (+5,+5): pg.transform.rotozoom(base,-135,0.9),
-        (-5,-5): pg.transform.rotozoom(base,45,0.9),
-        (-5,+5): pg.transform.rotozoom(base,135,0.9),
-    }
 
-def calc_orientation(org, dst, v):
+def get_kk_imgs() -> dict[tuple[int, int], pg.Surface]:
+    """
+    移動方向ごとにこうかとん画像を返す辞書を作成する関数
+    戻り値: {移動量タプル: Surface}
+    """
+    kk_base = pg.image.load("fig/3.png")
+    kk_imgs = {
+        (0, 0): pg.transform.rotozoom(kk_base, 0, 0.9),
+        (+5, 0): pg.transform.rotozoom(kk_base, 0, 0.9),
+        (-5, 0): pg.transform.rotozoom(kk_base, 180, 0.9),
+        (0, -5): pg.transform.rotozoom(kk_base, 90, 0.9),
+        (0, +5): pg.transform.rotozoom(kk_base, -90, 0.9),
+        (+5, -5): pg.transform.rotozoom(kk_base, -45, 0.9),
+        (+5, +5): pg.transform.rotozoom(kk_base, -135, 0.9),
+        (-5, -5): pg.transform.rotozoom(kk_base, 45, 0.9),
+        (-5, +5): pg.transform.rotozoom(kk_base, 135, 0.9),
+    }
+    return kk_imgs
+
+
+def calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float]) -> tuple[float, float]:
+    """
+    爆弾をこうかとんに向かわせるための方向ベクトルを計算する関数
+    引数: org 爆弾Rect, dst こうかとんRect, current_xy 現在の速度ベクトル
+    戻り値: (vx, vy) 新しい速度ベクトル
+    """
     dx = dst.centerx - org.centerx
     dy = dst.centery - org.centery
-    d = math.hypot(dx, dy)
-    if d == 0: return v
-    if d < 300: return v
-    s = math.sqrt(50)/d
-    return dx*s, dy*s
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return current_xy
+    if dist < 300:
+        return current_xy
+    scale = math.sqrt(50) / dist
+    return dx * scale, dy * scale
 
-def gameover(sc):
-    g = pg.Surface((WIDTH, HEIGHT))
-    g.fill((0,0,0)); g.set_alpha(200)
-    f = pg.font.Font(None,100)
-    t = f.render("Game Over", True, (255,255,255))
-    r = t.get_rect(center=(WIDTH//2, HEIGHT//2))
-    img = pg.image.load("fig/8.png")
-    ir = img.get_rect(center=(WIDTH//2, HEIGHT//2+100))
-    sc.blit(g,(0,0)); sc.blit(t,r); sc.blit(img,ir)
-    pg.display.update(); pg.time.wait(3000)
 
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
-    sc = pg.display.set_mode((WIDTH, HEIGHT))
-    bg = pg.image.load("fig/pg_bg.jpg")
+    screen = pg.display.set_mode((WIDTH, HEIGHT))
+    bg_img = pg.image.load("fig/pg_bg.jpg")
 
     kk_imgs = get_kk_imgs()
-    kk_r = kk_imgs[(0,0)].get_rect()
-    kk_r.center = 300,200
+    kk_rct = kk_imgs[(0, 0)].get_rect()
+    kk_rct.center = 300, 200
 
     bb_imgs, bb_accs = init_bb_imgs()
-    # --- 多个炸弹，但写得不规范 ---
-    b1 = bb_imgs[0].get_rect(); b1.center = random.randint(0,WIDTH), random.randint(0,HEIGHT)
-    b2 = bb_imgs[0].get_rect(); b2.center = random.randint(0,WIDTH), random.randint(0,HEIGHT)
-    b3 = bb_imgs[0].get_rect(); b3.center = random.randint(0,WIDTH), random.randint(0,HEIGHT)
-    v1 = (5,5); v2 = (-5,5); v3 = (5,-5)
 
-    clock = pg.time.Clock(); tmr=0
+    # 複数の爆弾を用意
+    num_bombs = 5  # 爆弾の数
+    bombs = []
+    for _ in range(num_bombs):
+        bb_rct = bb_imgs[0].get_rect()
+        bb_rct.centerx = random.randint(0, WIDTH)
+        bb_rct.centery = random.randint(0, HEIGHT)
+        vx, vy = random.choice([+5, -5]), random.choice([+5, -5])
+        bombs.append({"rct": bb_rct, "vx": vx, "vy": vy})
+
+    clock = pg.time.Clock()
+    tmr = 0
     while True:
-        for e in pg.event.get():
-            if e.type==pg.QUIT:return
-        sc.blit(bg,[0,0])
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                return
+        screen.blit(bg_img, [0, 0])
 
-        # 碰撞检测（写重复）
-        if kk_r.colliderect(b1) or kk_r.colliderect(b2) or kk_r.colliderect(b3):
-            gameover(sc); return
+        # こうかとん vs 複数爆弾
+        for bomb in bombs:
+            if kk_rct.colliderect(bomb["rct"]):
+                gameover(screen)
+                return
 
-        # こうかとん移动
-        key=pg.key.get_pressed(); mv=[0,0]
-        for k,d in DELTA.items():
-            if key[k]: mv[0]+=d[0]; mv[1]+=d[1]
-        kk_r.move_ip(mv)
-        if check_bound(kk_r)!=(True,True): kk_r.move_ip(-mv[0],-mv[1])
-        sc.blit(kk_imgs.get(tuple(mv), kk_imgs[(0,0)]), kk_r)
+        # こうかとん移動
+        key_lst = pg.key.get_pressed()
+        sum_mv = [0, 0]
+        for key, mv in DELTA.items():
+            if key_lst[key]:
+                sum_mv[0] += mv[0]
+                sum_mv[1] += mv[1]
+        kk_rct.move_ip(sum_mv)
+        if check_bound(kk_rct) != (True, True):
+            kk_rct.move_ip(-sum_mv[0], -sum_mv[1])
 
-        idx = min(tmr//500, 9)
-        # 炸弹1
-        v1 = calc_orientation(b1, kk_r, v1)
-        b1.move_ip(v1[0]*bb_accs[idx], v1[1]*bb_accs[idx])
-        sc.blit(bb_imgs[idx], b1)
-        # 炸弹2
-        v2 = calc_orientation(b2, kk_r, v2)
-        b2.move_ip(v2[0]*bb_accs[idx], v2[1]*bb_accs[idx])
-        sc.blit(bb_imgs[idx], b2)
-        # 炸弹3
-        v3 = calc_orientation(b3, kk_r, v3)
-        b3.move_ip(v3[0]*bb_accs[idx], v3[1]*bb_accs[idx])
-        sc.blit(bb_imgs[idx], b3)
+        kk_img = kk_imgs.get(tuple(sum_mv), kk_imgs[(0, 0)])
+        screen.blit(kk_img, kk_rct)
 
-        pg.display.update(); tmr+=1; clock.tick(50)
+        # 複数爆弾の処理
+        idx = min(tmr // 500, 9)
+        for bomb in bombs:
+            bb_img = bb_imgs[idx]
+            vx, vy = calc_orientation(bomb["rct"], kk_rct, (bomb["vx"], bomb["vy"]))
+            avx, avy = vx * bb_accs[idx], vy * bb_accs[idx]
+            bomb["vx"], bomb["vy"] = vx, vy
+            bomb["rct"].move_ip(avx, avy)
+            screen.blit(bb_img, bomb["rct"])
 
-if __name__=="__main__":
-    pg.init(); main(); pg.quit(); sys.exit()
+        pg.display.update()
+        tmr += 1
+        clock.tick(50)
+
+if __name__ == "__main__":
+    pg.init()
+    main()
+    pg.quit()
+    sys.exit()
